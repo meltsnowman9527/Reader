@@ -569,7 +569,7 @@ function registerMediaRoutes(app, options = {}) {
 
   const uploadVideo = multer({
     storage: videoStorage,
-      limits: { fileSize: 6 * 1024 * 1024 * 1024 },
+      limits: { fileSize: 10 * 1024 * 1024 * 1024 },
     fileFilter: (req, file, cb) => {
       const ok = ['.mp4', '.webm', '.mov', '.m4v', '.avi', '.mkv'];
       if (ok.includes(path.extname(file.originalname).toLowerCase())) cb(null, true);
