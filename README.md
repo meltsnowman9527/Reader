@@ -50,7 +50,7 @@
 
 ```bash
 git clone https://github.com/meltsnowman9527/Reader.git
-cd manga-reader
+cd Reader
 npm install
 ```
 
