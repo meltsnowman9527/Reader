@@ -49,7 +49,7 @@
 ### 安装
 
 ```bash
-git clone https://github.com/你的用户名/manga-reader.git
+git clone https://github.com/meltsnowman9527/Reader.git
 cd manga-reader
 npm install
 ```
