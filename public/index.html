@@ -1,0 +1,803 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>书库</title>
+<link rel="stylesheet" href="/css/style.css">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;700;900&family=Noto+Sans+SC:wght@300;400;500&display=swap" rel="stylesheet">
+</head>
+<body>
+
+<header class="site-header">
+  <div class="header-inner">
+    <a href="#" class="logo" onclick="showView('library')">
+      <span class="logo-icon">冊</span>
+      <span class="logo-text">书库</span>
+    </a>
+    <nav class="header-nav">
+      <button class="nav-btn" data-view="images" onclick="showView('images')">图片</button>
+      <button class="nav-btn" data-view="image-duplicates" onclick="showView('image-duplicates')">图片查重</button>
+      <button class="nav-btn" data-view="videos" onclick="showView('videos')">视频</button>
+      <button class="nav-btn" data-view="video-duplicates" onclick="showView('video-duplicates')">视频查重</button>
+      <button class="nav-btn" data-view="video-series" onclick="showView('video-series')">连续剧</button>
+      <button class="nav-btn" data-view="video-history" onclick="showView('video-history')">观看历史</button>
+      <button class="nav-btn active" data-view="library" onclick="showView('library')">书架</button>
+      <button class="nav-btn" data-view="duplicates" onclick="showView('duplicates')">查重</button>
+      <button class="nav-btn" data-view="novel-duplicates" onclick="showView('novel-duplicates')">小说查重</button>
+      <button class="nav-btn" data-view="series" onclick="showView('series')">套书</button>
+      <button class="nav-btn" data-view="tags"    onclick="showView('tags')">标签</button>
+      <button class="nav-btn" data-view="favorites" onclick="showView('favorites')">收藏夹</button>
+      <button class="nav-btn" data-view="upload"  onclick="showView('upload')">上传</button>
+    </nav>
+    <div class="header-right">
+      <div class="type-toggle">
+        <button class="type-btn active" id="typeManga"  onclick="switchType('manga')">漫画</button>
+        <button class="type-btn"        id="typeNovel"  onclick="switchType('novel')">小说</button>
+        <button class="type-btn"        id="typeImage"  onclick="switchType('image')">图片</button>
+        <button class="type-btn"        id="typeVideo"  onclick="switchType('video')">视频</button>
+      </div>
+      <div class="header-search">
+        <input type="search" id="searchInput" placeholder="搜索…" oninput="debounceSearch()">
+      </div>
+    </div>
+  </div>
+</header>
+
+<!-- ══ 书架 ══ -->
+<main id="view-library" class="view active">
+  <aside class="sidebar">
+    <div class="sidebar-section">
+      <h3>作者</h3>
+      <div id="authorList" class="filter-list"></div>
+    </div>
+    <div class="sidebar-section">
+      <h3>标签</h3>
+      <div id="tagCloud" class="tag-cloud"></div>
+    </div>
+    <div class="sidebar-section">
+      <h3>套书</h3>
+      <div id="seriesList" class="filter-list"></div>
+      <button class="clear-btn" id="clearSeriesBtn" onclick="clearActiveSeriesArchive()" style="display:none">✕ 取消该系列归档</button>
+    </div>
+  </aside>
+  <section class="content">
+    <div class="toolbar">
+      <span id="mangaCount" class="count-badge">0</span>
+      <div id="mobileSearchWrap" class="mobile-search-wrap">
+        <input type="search" id="mobileSearchInput" placeholder="搜索…" oninput="handleMobileSearchInput(this.value)">
+      </div>
+      <div class="active-filters" id="activeFilters"></div>
+      <button class="clear-btn mobile-extra" id="clearFiltersBtn" onclick="clearFilters()" style="display:none">✕ 清除</button>
+      <div class="per-page-select desktop-series-wrap" id="desktopSeriesWrap">套书
+        <select id="desktopSeriesSelect" onchange="handleDesktopSeriesSelect(this.value)">
+          <option value="">全部套书</option>
+        </select>
+      </div>
+      <div class="per-page-select mobile-series-wrap" id="mobileSeriesWrap" style="display:none">套书
+        <select id="mobileSeriesSelect" onchange="handleMobileSeriesSelect(this.value)">
+          <option value="">全部套书</option>
+        </select>
+      </div>
+      <button class="clear-btn mobile-extra" id="mobileClearSeriesBtn" onclick="clearActiveSeriesArchive()" style="display:none">✕ 取消该系列归档</button>
+      <div class="per-page-select" id="sortWrap">排序
+        <select id="sortSelect" onchange="changeSort(this.value)">
+          <option value="latest" selected>最新添加</option>
+          <option value="read_latest">最近阅读</option>
+          <option value="oldest">最早添加</option>
+          <option value="rating_desc">评分高到低</option>
+          <option value="rating_asc">评分低到高</option>
+        </select>
+      </div>
+      <label class="action-toggle mobile-extra">
+        <input type="checkbox" id="cardActionToggle" onchange="toggleCardActionButtons(this.checked)">
+        <span>显示管理按钮</span>
+      </label>
+      <button class="clear-btn" id="seriesArchiveBtn" onclick="runSeriesArchiveAction()">📚 套书归档</button>
+      <button class="clear-btn mobile-extra" id="cancelSeriesArchiveBtn" onclick="exitSeriesArchiveMode()" style="display:none">✕ 取消套书归档</button>
+      <button class="clear-btn mobile-extra" id="seriesRenameBtn" onclick="renameActiveSeries()" style="display:none">✎ 修改套书名</button>
+      <button class="clear-btn mobile-extra" id="seriesRemoveBtn" onclick="runSeriesRemoveAction()" style="display:none">🗂 批量移出套书</button>
+      <button class="clear-btn mobile-extra" id="cancelSeriesRemoveBtn" onclick="exitSeriesRemoveMode()" style="display:none">✕ 取消移出套书</button>
+      <button class="clear-btn mobile-extra" id="batchExportBtn" onclick="handleBatchExportAction()">⬇ 批量导出</button>
+      <button class="clear-btn mobile-extra" id="cancelBatchExportBtn" onclick="exitBatchExportMode()" style="display:none">✕ 取消批量导出</button>
+      <div class="per-page-select mobile-extra" id="perPageWrap">每页
+        <select id="perPageSelect" onchange="changePerPage(this.value)">
+          <option value="20" selected>20</option>
+          <option value="40">40</option>
+          <option value="60">60</option>
+        </select>部
+      </div>
+      <button class="clear-btn" id="mobileToolbarMoreBtn" onclick="toggleMobileToolbarMore()">更多 ▾</button>
+    </div>
+    <div id="duplicatePanel" class="duplicate-panel" style="display:none">
+      <div class="duplicate-panel-head">
+        <span id="duplicatePanelTitle" class="count-badge"></span>
+        <button class="clear-btn" onclick="clearDuplicateList()">✕ 关闭</button>
+      </div>
+      <div id="duplicateList" class="duplicate-list"></div>
+    </div>
+    <div id="mangaGrid" class="manga-grid"></div>
+    <div id="pagination" class="pagination"></div>
+  </section>
+</main>
+
+<!-- ══ 查重 ══ -->
+<main id="view-duplicates" class="view">
+  <div class="tags-page">
+    <div class="tags-header">
+      <h2 class="page-title">重复漫画管理</h2>
+      <p class="tags-hint">按重复度从高到低展示，可直接阅读、编辑、删除</p>
+    </div>
+    <div class="toolbar">
+      <span id="duplicateCount" class="count-badge">0</span>
+      <button class="clear-btn" id="duplicateRefreshBtn" onclick="runDuplicateCheckAction(true)">🔄 刷新查重</button>
+      <button class="clear-btn" id="duplicateModeBtn" onclick="switchDuplicateMode(duplicateMode === 'hash' ? 'title' : 'hash')">🔐 切换为内容查重</button>
+      <div class="threshold-control" id="thresholdControl">
+        <label for="duplicateThresholdRange">阈值</label>
+        <input type="range" id="duplicateThresholdRange" min="50" max="95" step="1" value="74"
+          oninput="handleDuplicateThresholdInput(this.value)" onchange="applyDuplicateThreshold(this.value)">
+        <span id="duplicateThresholdLabel">74%</span>
+      </div>
+      <button class="clear-btn" id="seriesArchiveBtnDup" onclick="runSeriesArchiveAction()">📚 套书归档</button>
+      <button class="clear-btn" id="cancelSeriesArchiveBtnDup" onclick="exitSeriesArchiveMode()" style="display:none">✕ 取消套书归档</button>
+      <button class="clear-btn" id="duplicateIgnoreBtn" onclick="handleDuplicateIgnoreAction()">🙈 忽略筛查</button>
+      <button class="clear-btn" id="duplicateCancelIgnoreBtn" onclick="exitDuplicateIgnoreMode()" style="display:none">✕ 取消忽略选择</button>
+      <button class="clear-btn" id="duplicateIgnoredListBtn" onclick="toggleDuplicateIgnoredList()">📦 已忽略列表</button>
+      <button class="clear-btn" id="duplicateRestoreBtn" onclick="handleDuplicateRestoreAction()" style="display:none">↩ 取消忽略</button>
+      <button class="clear-btn" id="duplicateCancelRestoreBtn" onclick="exitDuplicateRestoreMode()" style="display:none">✕ 取消恢复选择</button>
+      <label class="action-toggle">
+        <input type="checkbox" id="dupCardActionToggle" onchange="syncDuplicateActionToggle(this.checked)">
+        <span>显示管理按钮</span>
+      </label>
+      <div class="per-page-select">每页
+        <select id="duplicatePerPageSelect" onchange="changeDuplicatePerPage(this.value)">
+          <option value="20" selected>20</option>
+          <option value="40">40</option>
+          <option value="60">60</option>
+        </select>部
+      </div>
+    </div>
+    <div id="duplicateGrid" class="manga-grid"></div>
+    <div id="duplicatePagination" class="pagination"></div>
+  </div>
+</main>
+
+<!-- ══ 套书 ══ -->
+<main id="view-series" class="view">
+  <div class="tags-page">
+    <div class="tags-header">
+      <h2 class="page-title">套书总览</h2>
+      <p class="tags-hint">展示已归类套书，点击可进入对应套书书架</p>
+    </div>
+    <div class="toolbar">
+      <span id="seriesCount" class="count-badge">0</span>
+      <div class="per-page-select" id="seriesSortWrap">排序
+        <select id="seriesSortSelect" onchange="changeSeriesSort(this.value)">
+          <option value="created_desc">最新创建</option>
+          <option value="updated_desc">最近修改</option>
+          <option value="created_asc">最早创建</option>
+          <option value="viewed_desc">最近查看</option>
+        </select>
+      </div>
+    </div>
+    <div id="seriesGrid" class="series-grid"></div>
+  </div>
+</main>
+
+<!-- ══ 视频连续剧 ══ -->
+<main id="view-video-series" class="view">
+  <div class="tags-page">
+    <div class="tags-header">
+      <h2 class="page-title">视频连续剧总览</h2>
+      <p class="tags-hint">展示已归类连续剧，点击可进入对应视频列表</p>
+    </div>
+    <div class="toolbar">
+      <span id="videoSeriesCount" class="count-badge">0</span>
+      <button class="clear-btn" id="videoSeriesRenameBtn" onclick="renameActiveVideoSeries()" style="display:none">✎ 重命名连续剧</button>
+      <button class="clear-btn" id="videoSeriesBatchClearBtn" onclick="handleVideoSeriesBatchClearAction()">🧹 批量清空连续剧归档</button>
+      <button class="clear-btn" id="videoSeriesBatchCancelBtn" onclick="exitVideoSeriesBatchClearMode()" style="display:none">✕ 取消批量清空</button>
+      <div class="per-page-select" id="videoSeriesSortWrap">排序
+        <select id="videoSeriesSortSelect" onchange="changeVideoSeriesSort(this.value)">
+          <option value="updated_desc">最近更新</option>
+          <option value="created_desc">最新创建</option>
+          <option value="created_asc">最早创建</option>
+          <option value="viewed_desc">最近查看</option>
+        </select>
+      </div>
+    </div>
+    <div id="videoSeriesGrid" class="series-grid"></div>
+  </div>
+</main>
+
+<!-- ══ 视频观看历史 ══ -->
+<main id="view-video-history" class="view">
+  <div class="tags-page">
+    <div class="tags-header">
+      <h2 class="page-title">视频观看历史</h2>
+      <p class="tags-hint">按最近观看时间排序，点击卡片可继续播放</p>
+    </div>
+    <div class="toolbar">
+      <span id="videoHistoryCount" class="count-badge">0 条历史</span>
+      <button class="clear-btn" onclick="clearVideoHistoryAll()">🧹 清空历史</button>
+      <div class="per-page-select">每页
+        <select id="videoHistoryPerPageSelect" onchange="changeVideoHistoryPerPage(this.value)">
+          <option value="20" selected>20</option>
+          <option value="40">40</option>
+          <option value="60">60</option>
+          <option value="100">100</option>
+        </select>条
+      </div>
+    </div>
+    <div id="videoHistoryGrid" class="manga-grid"></div>
+    <div id="videoHistoryPagination" class="pagination"></div>
+  </div>
+</main>
+
+<!-- ══ 标签 ══ -->
+<main id="view-tags" class="view">
+  <div class="tags-page">
+    <div class="tags-header">
+      <h2 class="page-title">标签筛选</h2>
+      <p class="tags-hint">可多选标签（AND 逻辑）</p>
+    </div>
+    <div id="tagFilterCloud" class="tag-filter-cloud"></div>
+    <div id="tagFilterResult" style="display:none">
+      <div class="toolbar">
+        <span id="tagResultCount" class="count-badge"></span>
+        <button class="clear-btn" onclick="clearTagFilter()">✕ 清除标签</button>
+        <div class="per-page-select">每页
+          <select id="tagPerPageSelect" onchange="changeTagPerPage(this.value)">
+            <option value="20" selected>20</option><option value="40">40</option><option value="60">60</option>
+          </select>部
+        </div>
+      </div>
+      <div id="tagMangaGrid" class="manga-grid"></div>
+      <div id="tagPagination" class="pagination"></div>
+    </div>
+    <div id="tagEmptyResult" class="empty-state" style="display:none">
+      <div class="empty-icon">🔍</div><p>没有符合条件的结果</p>
+    </div>
+    <div id="tagNoSelect" class="empty-state">
+      <div class="empty-icon">🏷️</div><p>请在上方选择标签</p>
+    </div>
+  </div>
+</main>
+
+<!-- ══ 收藏夹 ══ -->
+<main id="view-favorites" class="view">
+  <div class="tags-page">
+    <div class="tags-header">
+      <h2 class="page-title">收藏夹</h2>
+      <p class="tags-hint">可按分类查看收藏的漫画/小说</p>
+    </div>
+    <div class="toolbar favorites-toolbar">
+      <span id="favoriteCount" class="count-badge">0</span>
+      <div class="per-page-select">分类
+        <select id="favoriteCategorySelect" onchange="changeFavoriteCategory(this.value)">
+          <option value="">全部分类</option>
+        </select>
+      </div>
+      <button class="clear-btn" id="favoriteBatchBtn" onclick="runFavoriteBatchAction()">⭐ 批量取消收藏</button>
+      <button class="clear-btn" id="favoriteBatchCancelBtn" onclick="exitFavoriteBatchMode()" style="display:none">✕ 退出批量模式</button>
+      <button class="clear-btn" onclick="clearFavoriteCategoryFilter()">✕ 清除分类</button>
+      <div class="per-page-select">每页
+        <select id="favoritePerPageSelect" onchange="changeFavoritePerPage(this.value)">
+          <option value="20" selected>20</option>
+          <option value="40">40</option>
+          <option value="60">60</option>
+        </select>部
+      </div>
+    </div>
+    <div id="favoriteGrid" class="manga-grid"></div>
+    <div id="favoritePagination" class="pagination"></div>
+    <div id="favoriteEmpty" class="empty-state" style="display:none">
+      <div class="empty-icon">⭐</div><p>当前没有收藏内容</p>
+    </div>
+  </div>
+</main>
+
+<!-- ══ 图片 ══ -->
+<main id="view-images" class="view">
+  <div class="tags-page">
+    <div class="toolbar">
+      <span id="imageCount" class="count-badge">0</span>
+      <button class="clear-btn" id="imageBatchFavoriteBtn" onclick="MediaFeature.handleImageBatchFavoriteAction()">⭐ 批量收藏</button>
+      <button class="clear-btn" id="imageBatchExportBtn" onclick="MediaFeature.handleImageBatchExportAction()">⬇ 批量导出</button>
+      <button class="clear-btn" id="imageBatchDeleteBtn" onclick="MediaFeature.handleImageBatchDeleteAction()">🗑 批量删除</button>
+      <button class="clear-btn" id="imageBatchCancelBtn" onclick="MediaFeature.exitImageBatchMode()" style="display:none">✕ 退出批量模式</button>
+      <div class="per-page-select">每页
+        <select id="imagePerPageSelect" onchange="MediaFeature.changeImagePerPage(this.value)">
+          <option value="20">20</option>
+          <option value="40" selected>40</option>
+          <option value="60">60</option>
+          <option value="100">100</option>
+        </select>张
+      </div>
+      <label class="action-toggle">
+        <input type="checkbox" id="imageCardActionToggle" onchange="toggleCardActionButtons(this.checked)">
+        <span>显示管理按钮</span>
+      </label>
+    </div>
+    <div id="imageGrid" class="manga-grid"></div>
+    <div id="imagePagination" class="pagination"></div>
+  </div>
+</main>
+
+<!-- ══ 图片查重 ══ -->
+<main id="view-image-duplicates" class="view">
+  <div class="tags-page">
+    <div id="imageDuplicatePanel" class="duplicate-panel">
+      <div class="duplicate-panel-head">
+        <span id="imageDuplicatePanelTitle" class="count-badge">图片查重</span>
+        <button class="clear-btn" id="imageDuplicateIgnoredBtn" onclick="MediaFeature.toggleImageDuplicateIgnoredView()">📦 查看已忽略列表</button>
+        <button class="clear-btn" id="imageDuplicateRestoreBtn" onclick="MediaFeature.handleImageDuplicateRestoreAction()" style="display:none">↩ 恢复忽略</button>
+        <button class="clear-btn" id="imageDuplicateKeepLatestBtn" onclick="MediaFeature.handleImageDuplicateKeepLatestAction()">🧹 每组保留最新</button>
+        <button class="clear-btn" id="imageDuplicateDeleteBtn" onclick="MediaFeature.handleImageDuplicateDeleteAction()">🗑 批量删除</button>
+        <button class="clear-btn" id="imageDuplicateCancelBtn" onclick="MediaFeature.exitImageDuplicateSelectMode()" style="display:none">✕ 取消选择</button>
+        <button class="clear-btn" onclick="showView('images')">↩ 返回图片库</button>
+      </div>
+      <div id="imageDuplicateList" class="duplicate-list"></div>
+    </div>
+  </div>
+</main>
+
+<!-- ══ 小说查重 ══ -->
+<main id="view-novel-duplicates" class="view">
+  <div class="tags-page">
+    <div id="novelDuplicatePanel" class="duplicate-panel">
+      <div class="duplicate-panel-head">
+        <span id="novelDuplicatePanelTitle" class="count-badge">小说查重</span>
+        <button class="clear-btn" id="novelDuplicateRefreshBtn" onclick="runNovelDuplicateCheck()">🔄 刷新查重</button>
+        <button class="clear-btn" id="novelDuplicateIgnoredBtn" onclick="toggleNovelDuplicateIgnoredView()">📦 查看已忽略列表</button>
+        <button class="clear-btn" id="novelDuplicateRestoreBtn" onclick="handleNovelDuplicateRestoreAction()" style="display:none">↩ 恢复忽略</button>
+        <button class="clear-btn" id="novelDuplicateDeleteBtn" onclick="handleNovelDuplicateDeleteAction()">🗑 批量删除</button>
+        <button class="clear-btn" id="novelDuplicateCancelBtn" onclick="exitNovelDuplicateSelectMode()" style="display:none">✕ 取消选择</button>
+        <button class="clear-btn" onclick="showView('library')">↩ 返回书架</button>
+      </div>
+      <div id="novelDuplicateList" class="duplicate-list"></div>
+    </div>
+  </div>
+</main>
+
+<!-- ══ 视频 ══ -->
+<main id="view-videos" class="view">
+  <div class="tags-page">
+    <div class="toolbar">
+      <span id="videoCount" class="count-badge">0</span>
+      <div id="videoSearchWrap" class="mobile-search-wrap">
+        <input type="search" id="videoSearchInput" placeholder="搜索视频…" oninput="MediaFeature.handleVideoSearchInput(this.value)">
+      </div>
+      <button class="clear-btn" id="videoBatchFavoriteBtn" onclick="MediaFeature.handleVideoBatchFavoriteAction()">⭐ 收藏</button>
+      <button class="clear-btn" id="videoSeriesAssignBtn" onclick="MediaFeature.handleVideoSeriesAssignAction()">🎬 归档</button>
+      <button class="clear-btn" id="videoBatchExportBtn" onclick="MediaFeature.handleVideoBatchExportAction()">⬇ 导出</button>
+      <button class="clear-btn" id="videoBatchDeleteBtn" onclick="MediaFeature.handleVideoBatchDeleteAction()">🗑 删除</button>
+      <button class="clear-btn" id="videoBatchCancelBtn" onclick="MediaFeature.exitVideoBatchMode()" style="display:none">✕ 退出批量模式</button>
+      <div class="per-page-select" id="videoSortWrap">排序
+        <select id="videoSortSelect" onchange="MediaFeature.changeVideoSort(this.value)">
+          <option value="latest" selected>最新添加</option>
+          <option value="oldest">最早添加</option>
+          <option value="title_asc">标题 A→Z</option>
+          <option value="title_desc">标题 Z→A</option>
+          <option value="author_asc">作者 A→Z</option>
+          <option value="author_desc">作者 Z→A</option>
+          <option value="rating_desc">评分高到低</option>
+          <option value="rating_asc">评分低到高</option>
+        </select>
+      </div>
+      <button class="clear-btn" id="videoSeriesClearBtn" onclick="MediaFeature.clearVideoSeriesFilter()" style="display:none">✕ 清除连续剧筛选</button>
+      <button class="clear-btn" id="videoSeriesRemoveBtn" onclick="MediaFeature.handleVideoSeriesRemoveAction()" style="display:none">↩ 移出连续剧</button>
+      <div class="per-page-select" id="videoPerPageWrap">每页
+        <select id="videoPerPageSelect" onchange="MediaFeature.changeVideoPerPage(this.value)">
+          <option value="20">20</option>
+          <option value="21" selected>21</option>
+          <option value="40">40</option>
+          <option value="60">60</option>
+          <option value="100">100</option>
+        </select>个
+      </div>
+      <label class="action-toggle">
+        <input type="checkbox" id="videoCardActionToggle" onchange="toggleCardActionButtons(this.checked)">
+        <span>管理按钮</span>
+      </label>
+    </div>
+    <div id="videoGrid" class="manga-grid"></div>
+    <div id="videoPagination" class="pagination"></div>
+  </div>
+</main>
+
+<!-- ══ 视频查重 ══ -->
+<main id="view-video-duplicates" class="view">
+  <div class="tags-page">
+    <div id="videoDuplicatePanel" class="duplicate-panel">
+      <div class="duplicate-panel-head">
+        <span id="videoDuplicatePanelTitle" class="count-badge">视频查重</span>
+        <button class="clear-btn" id="videoDuplicateIgnoredBtn" onclick="MediaFeature.toggleVideoDuplicateIgnoredView()">📦 查看已忽略列表</button>
+        <button class="clear-btn" id="videoDuplicateRestoreBtn" onclick="MediaFeature.handleVideoDuplicateRestoreAction()" style="display:none">↩ 恢复忽略</button>
+        <button class="clear-btn" id="videoDuplicateDeleteBtn" onclick="MediaFeature.handleVideoDuplicateDeleteAction()">🗑 批量删除</button>
+        <button class="clear-btn" id="videoDuplicateCancelBtn" onclick="MediaFeature.exitVideoDuplicateSelectMode()" style="display:none">✕ 取消选择</button>
+        <button class="clear-btn" onclick="showView('videos')">↩ 返回视频库</button>
+      </div>
+      <div id="videoDuplicateList" class="duplicate-list"></div>
+    </div>
+  </div>
+</main>
+
+<!-- ══ 上传 ══ -->
+<main id="view-upload" class="view">
+  <div class="upload-page">
+    <h2 class="page-title">上传</h2>
+    <!-- 上传类型切换 -->
+    <div class="upload-type-tabs">
+      <button class="utab active" id="utabManga" onclick="switchUploadType('manga')">📖 漫画</button>
+      <button class="utab"        id="utabNovel" onclick="switchUploadType('novel')">📝 小说</button>
+      <button class="utab"        id="utabImage" onclick="switchUploadType('image')">🖼 图片</button>
+      <button class="utab"        id="utabVideo" onclick="switchUploadType('video')">🎬 视频</button>
+    </div>
+
+    <!-- 漫画上传 -->
+    <div id="uploadMangaForm" class="upload-form-card">
+      <div id="dropZone" class="drop-zone"
+        ondragover="handleDragOver(event)" ondragleave="handleDragLeave(event)"
+        ondrop="handleDrop(event,'manga')" onclick="openFilePicker('manga')">
+        <input type="file" id="fileInput" accept=".zip,.cbz,.cbr,.rar" multiple hidden onchange="handleFileSelect(event,'manga')">
+        <div class="drop-icon">📦</div>
+        <p class="drop-text">点击或拖拽漫画压缩包（可多选）</p>
+        <p class="drop-hint">ZIP · CBZ · CBR · RAR，最大 5GB</p>
+      </div>
+      <div id="fileInfo" class="file-info" style="display:none"></div>
+      <div class="form-fields">
+        <div class="field"><label>标题 <span class="req">*</span></label><input type="text" id="titleInput" placeholder="自动填入，可修改"></div>
+        <div class="field"><label>作者</label><input type="text" id="authorInput" placeholder="输入作者名"><div id="authorSuggestions" class="suggestions"></div></div>
+        <div class="field"><label>标签</label>
+          <div class="tag-input-wrap"><div id="tagBadges" class="tag-badges"></div>
+            <input type="text" id="tagInput" placeholder="输入后按 Enter" onkeydown="handleTagInput(event,'manga')" oninput="handleTagInputSug(event,'manga')">
+          </div>
+          <div id="tagSuggestions" class="suggestions"></div>
+        </div>
+      </div>
+      <div id="progressArea" class="progress-area" style="display:none">
+        <div class="progress-label"><span id="progressText">准备上传…</span><span id="progressPercent">0%</span></div>
+        <div class="progress-bar"><div id="progressFill" class="progress-fill"></div></div>
+      </div>
+      <button class="upload-btn" id="uploadBtn" onclick="startUpload('manga')" disabled>开始上传</button>
+    </div>
+
+    <!-- 小说上传 -->
+    <div id="uploadNovelForm" class="upload-form-card" style="display:none">
+      <div id="novelDropZone" class="drop-zone"
+        ondragover="handleDragOver(event)" ondragleave="handleDragLeave(event)"
+        ondrop="handleDrop(event,'novel')" onclick="openFilePicker('novel')">
+        <input type="file" id="novelFileInput" accept=".txt,.epub" multiple hidden onchange="handleFileSelect(event,'novel')">
+        <div class="drop-icon">📝</div>
+        <p class="drop-text">点击或拖拽小说文件（可多选）</p>
+        <p class="drop-hint">TXT · EPUB，最大 200MB</p>
+      </div>
+      <div id="novelFileInfo" class="file-info" style="display:none"></div>
+      <div class="form-fields">
+        <div class="field"><label>标题 <span class="req">*</span></label><input type="text" id="novelTitleInput" placeholder="自动填入，可修改"></div>
+        <div class="field"><label>作者</label><input type="text" id="novelAuthorInput" placeholder="输入作者名"><div id="novelAuthorSugg" class="suggestions"></div></div>
+        <div class="field"><label>标签</label>
+          <div class="tag-input-wrap"><div id="novelTagBadges" class="tag-badges"></div>
+            <input type="text" id="novelTagInput" placeholder="输入后按 Enter" onkeydown="handleTagInput(event,'novel')" oninput="handleTagInputSug(event,'novel')">
+          </div>
+          <div id="novelTagSuggestions" class="suggestions"></div>
+        </div>
+      </div>
+      <div id="novelProgressArea" class="progress-area" style="display:none">
+        <div class="progress-label"><span id="novelProgressText">准备上传…</span><span id="novelProgressPercent">0%</span></div>
+        <div class="progress-bar"><div id="novelProgressFill" class="progress-fill"></div></div>
+      </div>
+      <button class="upload-btn" id="novelUploadBtn" onclick="startUpload('novel')" disabled>开始上传</button>
+    </div>
+
+    <!-- 图片上传 -->
+    <div id="uploadImageForm" class="upload-form-card" style="display:none">
+      <div id="imageDropZone" class="drop-zone"
+        ondragover="handleDragOver(event)" ondragleave="handleDragLeave(event)"
+        ondrop="handleDrop(event,'image')" onclick="openFilePicker('image')">
+        <input type="file" id="imageFileInput" accept="image/*" multiple hidden onchange="handleFileSelect(event,'image')">
+        <div class="drop-icon">🖼</div>
+        <p class="drop-text">点击或拖拽图片文件（可多选）</p>
+        <p class="drop-hint">JPG · PNG · GIF · WEBP · BMP · AVIF · SVG，最大 100MB/张</p>
+      </div>
+      <div id="imageFileInfo" class="file-info" style="display:none"></div>
+      <div class="form-fields">
+        <div class="field"><label>标题 <span class="req">*</span></label><input type="text" id="imageTitleInput" placeholder="自动填入，可修改"></div>
+      </div>
+      <div id="imageProgressArea" class="progress-area" style="display:none">
+        <div class="progress-label"><span id="imageProgressText">准备上传…</span><span id="imageProgressPercent">0%</span></div>
+        <div class="progress-bar"><div id="imageProgressFill" class="progress-fill"></div></div>
+      </div>
+      <button class="upload-btn" id="imageUploadBtn" onclick="startUpload('image')" disabled>开始上传</button>
+    </div>
+
+    <!-- 视频上传 -->
+    <div id="uploadVideoForm" class="upload-form-card" style="display:none">
+      <div id="videoDropZone" class="drop-zone"
+        ondragover="handleDragOver(event)" ondragleave="handleDragLeave(event)"
+        ondrop="handleDrop(event,'video')" onclick="openFilePicker('video')">
+        <input type="file" id="videoFileInput" accept="video/*" multiple hidden onchange="handleFileSelect(event,'video')">
+        <div class="drop-icon">🎬</div>
+        <p class="drop-text">点击或拖拽视频文件（可多选）</p>
+        <p class="drop-hint">MP4 · WEBM · MOV · M4V · AVI · MKV，最大 6GB/个</p>
+      </div>
+      <div id="videoFileInfo" class="file-info" style="display:none"></div>
+      <div class="form-fields">
+        <div class="field"><label>标题 <span class="req">*</span></label><input type="text" id="videoTitleInput" placeholder="自动填入，可修改"></div>
+      </div>
+      <div id="videoProgressArea" class="progress-area" style="display:none">
+        <div class="progress-label"><span id="videoProgressText">准备上传…</span><span id="videoProgressPercent">0%</span></div>
+        <div class="progress-bar"><div id="videoProgressFill" class="progress-fill"></div></div>
+      </div>
+      <button class="upload-btn" id="videoUploadBtn" onclick="startUpload('video')" disabled>开始上传</button>
+    </div>
+  </div>
+</main>
+
+<!-- ══ 漫画阅读器 ══ -->
+<div id="readerModal" class="reader-modal" style="display:none">
+  <div class="reader-header">
+    <button class="reader-back" onclick="closeReader()">← 返回</button>
+    <span id="readerTitle" class="reader-title"></span>
+    <div class="reader-controls">
+      <button onclick="toggleReadingMode()" id="modeBtn" class="ctrl-btn" title="切换方向">⇅</button>
+      <div class="page-jump">
+        <input type="number" id="pageJumpInput" class="page-jump-input" min="1" value="1"
+          onkeydown="handlePageJump(event)" onblur="handlePageJumpBlur()">
+        <span class="page-jump-sep">/</span>
+        <span id="pageTotalLabel" class="page-jump-total">1</span>
+      </div>
+    </div>
+  </div>
+  <div id="readerBody" class="reader-body" onclick="handleReaderClick(event)">
+    <div id="pageContainer" class="page-container"></div>
+  </div>
+  <div class="reader-footer">
+    <div class="reader-progress-wrap">
+      <input type="range" id="readerProgressRange" class="reader-progress-range" min="1" max="1" step="1" value="1"
+        oninput="handleReaderProgressInput(this.value)" onchange="handleReaderProgressChange(this.value)">
+      <span id="readerProgressLabel" class="reader-progress-label">1 / 1 页</span>
+    </div>
+  </div>
+</div>
+
+<!-- ══ 图片查看器 ══ -->
+<div id="imageViewerModal" class="media-modal" style="display:none">
+  <div class="reader-header">
+    <button class="reader-back" onclick="closeImageViewer()">← 返回</button>
+    <span id="imageViewerTitle" class="reader-title"></span>
+    <div class="iv-mode-toggle">
+      <button id="ivModeSingle" class="iv-mode-btn active" onclick="setImageViewerMode('single')" title="单图模式">⇔</button>
+      <button id="ivModeScroll" class="iv-mode-btn" onclick="setImageViewerMode('scroll')" title="连续滚动">↕</button>
+    </div>
+  </div>
+  <!-- 单图模式 -->
+  <div id="ivSinglePane" class="iv-single-pane">
+    <div id="ivSingleWrap" class="iv-single-wrap" tabindex="0">
+      <img id="ivSingleImg" class="iv-single-img" src="" alt="">
+    </div>
+  </div>
+  <!-- 滚动模式 -->
+  <div id="ivScrollPane" class="iv-scroll-pane" style="display:none">
+    <div id="imageViewerList" class="image-viewer-list"></div>
+  </div>
+</div>
+
+<!-- ══ 视频查看器 ══ -->
+<div id="videoViewerModal" class="media-modal" style="display:none">
+  <div class="reader-header video-viewer-header">
+    <button class="reader-back" onclick="closeVideoViewer()">← 返回</button>
+    <span id="videoViewerTitle" class="reader-title">视频播放</span>
+  </div>
+  <div class="media-body video-viewer-body">
+    <div class="video-player-shell">
+      <section class="video-main-panel">
+        <div class="video-stage-wrap">
+          <video id="videoViewerEl" class="media-video" controls playsinline webkit-playsinline x5-playsinline x5-video-player-type="h5-page" preload="metadata"></video>
+        </div>
+        <div class="video-info-panel">
+          <h3 id="videoViewerMainTitle" class="video-main-title">视频</h3>
+          <div id="videoViewerSubMeta" class="video-sub-meta">准备播放…</div>
+          <div class="video-action-row">
+            <button class="ctrl-btn" id="videoViewerPrevBtn" onclick="shiftVideoViewer(-1)" title="上一集">‹</button>
+            <button class="ctrl-btn" id="videoViewerNextBtn" onclick="shiftVideoViewer(1)" title="下一集">›</button>
+            <span id="videoViewerEpisodeBadge" class="video-episode-badge">--/--</span>
+          </div>
+        </div>
+      </section>
+      <aside class="video-side-panel">
+        <div class="video-side-head">
+          <span class="video-side-title">选集列表</span>
+          <span id="videoViewerPlaylistCount" class="video-side-count">0</span>
+        </div>
+        <div id="videoViewerPlaylist" class="video-playlist"></div>
+      </aside>
+    </div>
+  </div>
+</div>
+
+<!-- ══ 小说阅读器 ══ -->
+<div id="novelModal" class="novel-modal" style="display:none">
+  <div class="novel-header">
+    <button class="reader-back" onclick="closeNovel()">← 返回</button>
+    <span id="novelReaderTitle" class="reader-title"></span>
+    <div class="novel-header-actions">
+      <button class="ctrl-btn" onclick="openNovelEdit()" id="renameNovelBtn" title="编辑小说信息">✎</button>
+      <button class="ctrl-btn" onclick="toggleNovelSettingsPanel()" id="novelSettingsBtn" title="阅读设置">⚙</button>
+      <button class="ctrl-btn" onclick="toggleNovelPanel()" id="chapterPanelBtn" title="章节目录">☰</button>
+    </div>
+  </div>
+
+  <div class="novel-layout">
+    <!-- 章节目录侧边栏 -->
+    <div id="novelSidebar" class="novel-sidebar">
+      <div class="novel-sidebar-header">章节目录</div>
+      <div id="chapterList" class="chapter-list"></div>
+    </div>
+
+    <!-- 正文 -->
+    <div id="novelBody" class="novel-body" onclick="handleNovelBodyClick(event)">
+      <div id="novelContent" class="novel-content"></div>
+    </div>
+  </div>
+
+  <div class="novel-nav">
+    <button class="nav-arrow" onclick="prevChapter()">‹ 上一章</button>
+    <div class="novel-progress-wrap">
+      <div class="novel-progress-mode">
+        <button class="progress-tab active" id="bookProgressTab" onclick="switchNovelProgressMode('book')">整本书</button>
+        <button class="progress-tab" id="chapterProgressTab" onclick="switchNovelProgressMode('chapter')">当前章节</button>
+      </div>
+      <input type="range" id="novelProgressRange" class="novel-progress-range" min="1" max="1" step="1" value="1"
+        oninput="handleNovelProgressInput(this.value)" onchange="handleNovelProgressChange(this.value)">
+      <span id="novelProgressLabel" class="novel-chapter-label">1 / 1 章</span>
+    </div>
+    <button class="nav-arrow" onclick="nextChapter()">下一章 ›</button>
+  </div>
+
+  <!-- 设置栏 -->
+  <div id="novelSettingsBar" class="novel-settings-bar">
+    <div class="setting-group">
+      <label>字号</label>
+      <button onclick="changeFontSize(-1)">A-</button>
+      <span id="fontSizeLabel">18</span>
+      <button onclick="changeFontSize(1)">A+</button>
+    </div>
+    <div class="setting-group">
+      <label>行距</label>
+      <button onclick="changeLineHeight(-0.1)">-</button>
+      <span id="lineHeightLabel">1.9</span>
+      <button onclick="changeLineHeight(0.1)">+</button>
+    </div>
+    <div class="setting-group">
+      <label>字体</label>
+      <select id="fontFamilySelect" onchange="changeFontFamily(this.value)">
+        <option value="Noto Serif SC, serif">思源宋体</option>
+        <option value="SimSun, Songti SC, serif">宋体</option>
+        <option value="KaiTi, STKaiti, serif">楷体</option>
+        <option value="SimHei, Heiti SC, sans-serif">黑体</option>
+        <option value="Microsoft YaHei, PingFang SC, sans-serif">微软雅黑</option>
+      </select>
+    </div>
+    <div class="setting-group">
+      <label>背景</label>
+      <button class="bg-btn active" style="background:#fdf6e3" onclick="setBg('#fdf6e3','#4a3728',this)"></button>
+      <button class="bg-btn" style="background:#ffffff" onclick="setBg('#ffffff','#2c2420',this)"></button>
+      <button class="bg-btn" style="background:#e8f5e9" onclick="setBg('#e8f5e9','#2c3e2d',this)"></button>
+      <button class="bg-btn" style="background:#1a1a2e" onclick="setBg('#1a1a2e','#c8c8d8',this)"></button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ 套书归档选择 Modal ══ -->
+<div id="seriesArchiveModal" class="edit-modal" style="display:none">
+  <div class="modal-card">
+    <h3 class="modal-title">套书归档</h3>
+    <div class="field">
+      <label>目标套书</label>
+      <select id="seriesArchiveTargetSelect" onchange="onSeriesArchiveTargetChange()"></select>
+      <div class="modal-hint" id="seriesArchiveTargetHint">选择已有套书可避免重名和错别字。</div>
+    </div>
+    <div class="field" id="seriesArchiveNewNameWrap" style="display:none">
+      <label>新套书名称</label>
+      <input type="text" id="seriesArchiveNewNameInput" placeholder="请输入新套书名称">
+      <div class="modal-hint">新建套书至少需要选择两本漫画。</div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-secondary" type="button" onclick="closeSeriesArchivePicker()">取消</button>
+      <button class="btn-primary" type="button" onclick="confirmSeriesArchivePicker()">确认归档</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ 套书改名 Modal ══ -->
+<div id="seriesRenameModal" class="edit-modal" style="display:none">
+  <div class="modal-card">
+    <h3 class="modal-title">修改套书名称</h3>
+    <div class="field">
+      <label>当前名称</label>
+      <input type="text" id="seriesRenameOldName" readonly>
+    </div>
+    <div class="field">
+      <label>新名称</label>
+      <input type="text" id="seriesRenameInput" placeholder="请输入新的套书名称" onkeydown="handleSeriesRenameInputKey(event)">
+    </div>
+    <div class="modal-actions">
+      <button class="btn-secondary" type="button" onclick="closeSeriesRenameModal()">取消</button>
+      <button class="btn-primary" type="button" onclick="submitSeriesRenameModal()">确认修改</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ 编辑 Modal ══ -->
+<div id="editModal" class="edit-modal" style="display:none">
+  <div class="modal-card">
+    <h3 class="modal-title">编辑信息</h3>
+    <input type="hidden" id="editId">
+    <input type="hidden" id="editType">
+    <div class="field"><label>标题</label><div class="input-clear-wrap"><input type="text" id="editTitle"><button type="button" class="input-clear-btn" onclick="clearEditField('editTitle')" aria-label="清空标题">✕</button></div></div>
+    <div class="field"><label>作者</label><div class="input-clear-wrap"><input type="text" id="editAuthor"><button type="button" class="input-clear-btn" onclick="clearEditField('editAuthor')" aria-label="清空作者">✕</button></div></div>
+    <div class="field" id="editRatingWrap" style="display:none">
+      <label>评分（五星）</label>
+      <div class="rating-editor" id="editRatingEditor"></div>
+    </div>
+    <div class="field"><label>标签</label>
+      <div class="tag-input-wrap">
+        <div id="editTagBadges" class="tag-badges"></div>
+        <div class="tag-input-row">
+          <input type="text" id="editTagInput" placeholder="输入后按 Enter"
+            onkeydown="handleEditTagInput(event)" oninput="handleEditTagInput(event)">
+          <button class="btn-icon-small" type="button" id="editTagAddBtn" onclick="addEditTagFromInput()" title="添加标签">+</button>
+        </div>
+      </div>
+      <div id="editTagSuggestions" class="suggestions"></div>
+    </div>
+    <div class="field">
+      <label>收藏分类</label>
+      <div class="favorite-edit-row">
+        <input type="text" id="editFavoriteCategory" placeholder="留空表示不收藏" oninput="updateEditFavoriteButton()">
+        <button class="btn-secondary" type="button" id="editFavoriteToggleBtn" onclick="toggleEditFavoriteQuick()">加入收藏</button>
+      </div>
+    </div>
+    <div class="field" id="editSeriesWrap" style="display:none">
+      <label>套书</label>
+      <div class="favorite-edit-row">
+        <input type="text" id="editSeriesName" readonly>
+        <button class="btn-secondary" type="button" id="editRemoveSeriesBtn" onclick="toggleEditRemoveSeries()">从套书中移除</button>
+      </div>
+      <input type="hidden" id="editRemoveSeriesFlag" value="0">
+    </div>
+    <div class="field" id="editVideoSeriesWrap" style="display:none">
+      <label>连续剧</label>
+      <div class="input-clear-wrap"><input type="text" id="editVideoSeriesName" placeholder="例如：第一季"><button type="button" class="input-clear-btn" onclick="clearEditField('editVideoSeriesName')" aria-label="清空连续剧">✕</button></div>
+    </div>
+    <div class="field" id="editVideoEpisodeWrap" style="display:none">
+      <label>第几集</label>
+      <input type="number" id="editVideoEpisodeNo" min="1" step="1" placeholder="留空表示未设置">
+    </div>
+    <div class="field" id="editVideoCoverWrap" style="display:none">
+      <label>视频封面（从视频中选一帧）</label>
+      <video id="editVideoCoverSource" class="edit-video-cover-source" controls playsinline webkit-playsinline preload="metadata"></video>
+      <div class="edit-video-cover-actions">
+        <button class="btn-secondary" type="button" onclick="captureEditVideoCoverFrame()">使用当前帧作为封面</button>
+        <button class="btn-secondary" type="button" onclick="clearEditVideoCover()">清空封面</button>
+      </div>
+      <div class="edit-video-cover-preview-wrap">
+        <img id="editVideoCoverPreview" class="edit-video-cover-preview" src="" alt="视频封面预览">
+      </div>
+      <div id="editVideoCoverHint" class="modal-hint">拖动上方视频进度条后点击“使用当前帧作为封面”。</div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-secondary" onclick="deleteCurrentEditItem()">删除当前内容</button>
+      <button class="btn-secondary" onclick="closeEdit()">取消</button>
+      <button class="btn-primary" onclick="saveEdit()">保存</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast" class="toast"></div>
+<script src="/js/media.js"></script>
+<script src="/js/app.js"></script>
+</body>
+</html>

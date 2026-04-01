@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>登录 · 书库</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #f4f1ec;
+    --surface: #ffffff;
+    --border: #e0d9d0;
+    --accent: #c0392b;
+    --text: #2c2420;
+    --text2: #7a6e68;
+  }
+  body {
+    min-height: 100vh;
+    background: linear-gradient(160deg, #f4f1ec 0%, #efe9e1 55%, #e8dfd4 100%);
+    color: var(--text);
+    font-family: "Segoe UI", "Noto Sans SC", sans-serif;
+    display: grid;
+    place-items: center;
+    padding: 1rem;
+  }
+  .login-card {
+    width: 100%;
+    max-width: 380px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 1.2rem;
+    box-shadow: 0 8px 24px rgba(0,0,0,.08);
+  }
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: .55rem;
+    margin-bottom: .95rem;
+  }
+  .brand-icon {
+    width: 34px;
+    height: 34px;
+    border-radius: 8px;
+    background: rgba(192,57,43,.12);
+    color: var(--accent);
+    display: grid;
+    place-items: center;
+    font-size: 1rem;
+    font-weight: 700;
+  }
+  .brand-text h1 {
+    font-size: 1rem;
+    font-weight: 700;
+  }
+  .brand-text p {
+    margin-top: .12rem;
+    color: var(--text2);
+    font-size: .78rem;
+  }
+  form {
+    display: grid;
+    gap: .75rem;
+  }
+  .field {
+    display: grid;
+    gap: .35rem;
+  }
+  label {
+    font-size: .78rem;
+    color: var(--text2);
+  }
+  input {
+    width: 100%;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: .55rem .65rem;
+    font-size: .9rem;
+    outline: none;
+    transition: border-color .15s;
+  }
+  input:focus {
+    border-color: var(--accent);
+  }
+  .login-btn {
+    width: 100%;
+    border: none;
+    border-radius: 8px;
+    background: var(--accent);
+    color: #fff;
+    padding: .62rem .8rem;
+    font-size: .92rem;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .login-btn[disabled] {
+    opacity: .75;
+    cursor: wait;
+  }
+  .msg {
+    min-height: 1.2em;
+    margin-top: .2rem;
+    font-size: .78rem;
+    color: var(--accent);
+  }
+</style>
+</head>
+<body>
+  <div class="login-card">
+    <div class="brand">
+      <div class="brand-icon">冊</div>
+      <div class="brand-text">
+        <h1>书库登录</h1>
+        <p>登录后可访问阅读器内容</p>
+      </div>
+    </div>
+
+    <form id="loginForm" autocomplete="on">
+      <div class="field">
+        <label for="username">用户名</label>
+        <input id="username" name="username" type="text" required autofocus>
+      </div>
+      <div class="field">
+        <label for="password">密码</label>
+        <input id="password" name="password" type="password" required>
+      </div>
+      <button type="submit" class="login-btn" id="loginBtn">登录</button>
+      <div id="loginMsg" class="msg"></div>
+    </form>
+  </div>
+
+  <script>
+    const form = document.getElementById('loginForm');
+    const btn = document.getElementById('loginBtn');
+    const msg = document.getElementById('loginMsg');
+
+    async function checkAuthStatus() {
+      try {
+        const res = await fetch('/api/auth/status', { cache: 'no-store' });
+        if (!res.ok) return;
+        const data = await res.json();
+        if (data && data.authenticated) {
+          window.location.replace('/');
+        }
+      } catch {}
+    }
+
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      msg.textContent = '';
+      btn.disabled = true;
+      const username = String(document.getElementById('username').value || '').trim();
+      const password = String(document.getElementById('password').value || '');
+
+      try {
+        const res = await fetch('/api/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username, password })
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          msg.textContent = data?.error || '登录失败，请重试';
+          return;
+        }
+        window.location.replace('/');
+      } catch {
+        msg.textContent = '网络异常，请稍后重试';
+      } finally {
+        btn.disabled = false;
+      }
+    });
+
+    checkAuthStatus();
+  </script>
+</body>
+</html>
