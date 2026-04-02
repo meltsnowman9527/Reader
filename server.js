@@ -8,7 +8,11 @@ const { v4: uuidv4 } = require('uuid');
 const AdmZip  = require('adm-zip');
 const yauzl   = require('yauzl');
 const iconv   = require('iconv-lite');
+const OpenCC  = require('opencc-js');
 const { registerMediaRoutes } = require('./routes/mediaRoutes');
+
+const novelScToTc = OpenCC.Converter({ from: 'cn', to: 'tw' });
+const novelTcToSc = OpenCC.Converter({ from: 'tw', to: 'cn' });
 
 const app  = express();
 const PORT = process.env.PORT || 3000;
@@ -985,6 +989,22 @@ function parseNovelChaptersByRecord(novel) {
   return chapters;
 }
 
+function normalizeNovelScriptMode(input) {
+  const mode = String(input || '').trim().toLowerCase();
+  return mode === 'tc' ? 'tc' : 'sc';
+}
+
+function convertNovelTextByScript(text, scriptMode) {
+  const raw = String(text || '');
+  if (!raw) return '';
+  const mode = normalizeNovelScriptMode(scriptMode);
+  try {
+    return mode === 'tc' ? novelScToTc(raw) : novelTcToSc(raw);
+  } catch {
+    return raw;
+  }
+}
+
 async function ensureNovelHashForRecord(novel) {
   if (!novel || typeof novel !== 'object') return false;
   let changed = false;
@@ -1740,11 +1760,16 @@ app.get('/api/novels/:id', (req, res, next) => {
   if (String(req.params.id || '').toLowerCase() === 'duplicates') return next();
   const n = loadNDB().novels.find(x => x.id === req.params.id);
   if (!n) return res.status(404).json({ error: '未找到' });
+  const scriptMode = normalizeNovelScriptMode(req.query?.script);
   const chapters = parseNovelChaptersByRecord(n);
   res.json({
     ...n,
+    title: convertNovelTextByScript(n.title || '', scriptMode),
     chapterCount: chapters.length,
-    chapters: chapters.map((ch, idx) => ({ idx, title: ch.title || `第${idx + 1}章` }))
+    chapters: chapters.map((ch, idx) => ({
+      idx,
+      title: convertNovelTextByScript(ch.title || `第${idx + 1}章`, scriptMode)
+    }))
   });
 });
 
@@ -1753,10 +1778,15 @@ app.get('/api/novels/:id/chapter/:idx', (req, res) => {
   const n   = loadNDB().novels.find(x => x.id === req.params.id);
   if (!n) return res.status(404).json({ error: '未找到' });
   const idx = parseInt(req.params.idx);
+  const scriptMode = normalizeNovelScriptMode(req.query?.script);
   const chapters = parseNovelChaptersByRecord(n);
   const ch  = chapters[idx];
   if (!ch)  return res.status(404).json({ error: '章节不存在' });
-  res.json(ch);
+  res.json({
+    ...ch,
+    title: convertNovelTextByScript(ch.title || `第${idx + 1}章`, scriptMode),
+    content: convertNovelTextByScript(ch.content || '', scriptMode)
+  });
 });
 
 // Upload novel

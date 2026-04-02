@@ -151,7 +151,8 @@ let novelSettings = {
   lineHeight: 1.9,
   bg: '#fdf6e3',
   color: '#4a3728',
-  fontFamily: 'Noto Serif SC, serif'
+  fontFamily: 'Noto Serif SC, serif',
+  scriptMode: 'sc'
 };
 let novelPanelOpen = false;
 let novelUIVisible = true;
@@ -161,6 +162,14 @@ let novelProgressMode = 'book';
 let novelSettingsPanelOpen = false;
 const NOVEL_MAX_RENDERED_CHAPTER_BLOCKS = 4;
 const tagSourceCache = { manga: null, novel: null };
+
+function normalizeNovelScriptMode(value) {
+  return String(value || '').trim().toLowerCase() === 'tc' ? 'tc' : 'sc';
+}
+
+function getCurrentNovelScriptMode() {
+  return normalizeNovelScriptMode(novelSettings?.scriptMode);
+}
 
 // 阅读进度
 const PROGRESS_KEY = 'manga_progress';
@@ -4417,7 +4426,8 @@ async function openNovel(id) {
       else if (currentView === 'library') loadLibrary({ resetPage: false });
     }
     showToast('加载中…','');
-    const data  = await fetch('/api/novels/'+id).then(r=>r.json());
+    const scriptMode = getCurrentNovelScriptMode();
+    const data  = await fetch(`/api/novels/${id}?script=${scriptMode}`).then(r=>r.json());
     const saved = getNovelProgress(id);
     const safeChapter = clampNovelChapterIndex(saved.chapter, data.chapterCount || 0);
     novel = {
@@ -4468,10 +4478,12 @@ function renderChapterList() {
 
 async function getNovelChapterData(idx) {
   if (idx < 0 || idx >= novel.chapters.length) return null;
-  if (!novel.chapterCache[idx]) {
-    novel.chapterCache[idx] = await fetch(`/api/novels/${novel.id}/chapter/${idx}`).then(r=>r.json());
+  const scriptMode = getCurrentNovelScriptMode();
+  const cacheKey = `${scriptMode}:${idx}`;
+  if (!novel.chapterCache[cacheKey]) {
+    novel.chapterCache[cacheKey] = await fetch(`/api/novels/${novel.id}/chapter/${idx}?script=${scriptMode}`).then(r=>r.json());
   }
-  return novel.chapterCache[idx] || { title: `第${idx+1}章`, content: '' };
+  return novel.chapterCache[cacheKey] || { title: `第${idx+1}章`, content: '' };
 }
 
 function renderNovelChapterBlock(ch, idx, withDivider = false) {
@@ -4657,9 +4669,22 @@ function renameNovelTitle() {
 
 // 设置
 function loadNovelSettings() {
-  try { const s=JSON.parse(localStorage.getItem('novel_settings')||'{}'); Object.assign(novelSettings,s); } catch {}
+  try {
+    const s = JSON.parse(localStorage.getItem('novel_settings') || '{}');
+    Object.assign(novelSettings, s);
+  } catch {}
+  novelSettings.scriptMode = normalizeNovelScriptMode(novelSettings.scriptMode);
 }
 function saveNovelSettingsLocal() { localStorage.setItem('novel_settings',JSON.stringify(novelSettings)); }
+
+function updateNovelScriptQuickButton() {
+  const quickBtn = document.getElementById('novelScriptQuickBtn');
+  if (!quickBtn) return;
+  const mode = getCurrentNovelScriptMode();
+  quickBtn.textContent = mode === 'tc' ? '繁' : '简';
+  quickBtn.title = mode === 'tc' ? '当前繁體，点击切换到简体' : '当前简体，点击切换到繁體';
+}
+
 function applyNovelSettings() {
   const body=document.getElementById('novelBody');
   if (!body) return;
@@ -4672,6 +4697,9 @@ function applyNovelSettings() {
   document.getElementById('lineHeightLabel').textContent = novelSettings.lineHeight.toFixed(1);
   const ff = document.getElementById('fontFamilySelect');
   if (ff) ff.value = novelSettings.fontFamily;
+  const script = document.getElementById('novelScriptSelect');
+  if (script) script.value = getCurrentNovelScriptMode();
+  updateNovelScriptQuickButton();
 }
 function changeFontSize(d) {
   novelSettings.fontSize = Math.max(12, Math.min(28, novelSettings.fontSize+d));
@@ -4692,6 +4720,45 @@ function changeFontFamily(v) {
   novelSettings.fontFamily = v;
   applyNovelSettings();
   saveNovelSettingsLocal();
+}
+
+async function changeNovelScriptMode(value) {
+  const nextMode = normalizeNovelScriptMode(value);
+  if (nextMode === getCurrentNovelScriptMode()) return;
+  novelSettings.scriptMode = nextMode;
+  applyNovelSettings();
+  saveNovelSettingsLocal();
+
+  if (!novel.id) {
+    showToast(`已切换为${nextMode === 'tc' ? '繁體' : '简体'}显示`, 'success');
+    return;
+  }
+
+  const currentIdx = clampNovelChapterIndex(novel.currentChapter, novel.chapterCount);
+  const body = document.getElementById('novelBody');
+  const maxScroll = body ? Math.max(body.scrollHeight - body.clientHeight, 0) : 0;
+  const currentScrollRatio = body && maxScroll ? (body.scrollTop / maxScroll) : 0;
+
+  try {
+    showToast('正在切换文字版本…', '');
+    const data = await fetch(`/api/novels/${novel.id}?script=${nextMode}`).then(r => r.json());
+    novel.title = data.title || novel.title;
+    novel.chapters = data.chapters || novel.chapters || [];
+    novel.chapterCount = Number(data.chapterCount || novel.chapters.length || 0);
+    novel.chapterCache = {};
+    novel.savedScrollRatio = currentScrollRatio;
+    document.getElementById('novelReaderTitle').textContent = novel.title;
+    renderChapterList();
+    await loadChapter(currentIdx);
+    showToast(`已切换为${nextMode === 'tc' ? '繁體' : '简体'}显示`, 'success');
+  } catch {
+    showToast('切换失败，请稍后重试', 'error');
+  }
+}
+
+function toggleNovelScriptModeQuick() {
+  const nextMode = getCurrentNovelScriptMode() === 'tc' ? 'sc' : 'tc';
+  changeNovelScriptMode(nextMode);
 }
 
 function saveCurrentNovelProgress() {

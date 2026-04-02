@@ -1341,6 +1341,13 @@ input[type=number] { -moz-appearance: textfield; }
 }
 .ctrl-btn:hover { background: var(--surface2); }
 .ctrl-btn:disabled { opacity: .45; cursor: not-allowed; }
+.ctrl-btn.script-toggle-btn {
+  width: auto;
+  min-width: 38px;
+  padding: 0 .4rem;
+  font-size: .78rem;
+  font-weight: 700;
+}
 
 /* Page jump input */
 .page-jump { display: flex; align-items: center; gap: .28rem; }

@@ -623,6 +623,7 @@
     <button class="reader-back" onclick="closeNovel()">← 返回</button>
     <span id="novelReaderTitle" class="reader-title"></span>
     <div class="novel-header-actions">
+      <button class="ctrl-btn script-toggle-btn" onclick="toggleNovelScriptModeQuick()" id="novelScriptQuickBtn" title="切换简体/繁體">简</button>
       <button class="ctrl-btn" onclick="openNovelEdit()" id="renameNovelBtn" title="编辑小说信息">✎</button>
       <button class="ctrl-btn" onclick="toggleNovelSettingsPanel()" id="novelSettingsBtn" title="阅读设置">⚙</button>
       <button class="ctrl-btn" onclick="toggleNovelPanel()" id="chapterPanelBtn" title="章节目录">☰</button>
@@ -678,6 +679,13 @@
         <option value="KaiTi, STKaiti, serif">楷体</option>
         <option value="SimHei, Heiti SC, sans-serif">黑体</option>
         <option value="Microsoft YaHei, PingFang SC, sans-serif">微软雅黑</option>
+      </select>
+    </div>
+    <div class="setting-group">
+      <label>文字</label>
+      <select id="novelScriptSelect" onchange="changeNovelScriptMode(this.value)">
+        <option value="sc">简体</option>
+        <option value="tc">繁體</option>
       </select>
     </div>
     <div class="setting-group">
