@@ -839,17 +839,32 @@ function scoreDecodedTextSample(text) {
   const sample = String(text || '').slice(0, 200000);
   const replacementCount = (sample.match(/\ufffd/g) || []).length;
   const cjkCount = (sample.match(/[\u3400-\u9fff]/g) || []).length;
-  const mojibakeCount = (sample.match(/[ÃÂÐÕÆØÅæçéèêëìíîïòóôõöùúûüñ]/g) || []).length;
-  return (cjkCount * 2) - (replacementCount * 12) - (mojibakeCount * 4);
+  const mojibakeLatinCount = (sample.match(/[ÃÂÐÕÆØÅæçéèêëìíîïòóôõöùúûüñ]/g) || []).length;
+  // UTF-8 被误按 GBK/GB18030 解码后，经常出现这组高频乱码字形。
+  const mojibakeHanCount = (sample.match(/[鍙鍦鏄鐨鎴涓銆锛浠涔閮钁氬彂鏂]/g) || []).length;
+  const mojibakeTokenCount = (sample.match(/(?:鏈|鍙戝竷|浣滆€|绗|銆€|鐨勬|鍦ㄨ|鍚庤|閲岄|闃跨|缁撴|璇磋|鍐呭)/g) || []).length;
+  const suspiciousRatio = cjkCount ? (mojibakeHanCount / cjkCount) : 0;
+  const ratioPenalty = suspiciousRatio > 0.06
+    ? Math.round(cjkCount * 1.3)
+    : suspiciousRatio > 0.03
+      ? Math.round(cjkCount * 0.7)
+      : 0;
+  return (cjkCount * 2)
+    - (replacementCount * 20)
+    - (mojibakeLatinCount * 6)
+    - (mojibakeHanCount * 8)
+    - (mojibakeTokenCount * 80)
+    - ratioPenalty;
 }
 
 function pickBestDecodedText(buffer) {
+  const sampleBuffer = buffer.length > 300000 ? buffer.slice(0, 300000) : buffer;
   const candidates = [];
   const pushCandidate = (encoding, decoder) => {
     try {
-      const text = decoder();
-      if (!text) return;
-      candidates.push({ encoding, text, score: scoreDecodedTextSample(text) });
+      const sampleText = decoder(sampleBuffer);
+      if (!sampleText) return;
+      candidates.push({ encoding, score: scoreDecodedTextSample(sampleText) });
     } catch {
       // ignore candidate decode failures
     }
@@ -874,18 +889,43 @@ function pickBestDecodedText(buffer) {
     return iconv.decode(data, 'utf16-le');
   }
 
-  pushCandidate('utf8', () => buffer.toString('utf8'));
-  pushCandidate('gb18030', () => iconv.decode(buffer, 'gb18030'));
-  pushCandidate('gbk', () => iconv.decode(buffer, 'gbk'));
+  pushCandidate('utf8', (buf) => buf.toString('utf8'));
+  pushCandidate('gb18030', (buf) => iconv.decode(buf, 'gb18030'));
+  pushCandidate('gbk', (buf) => iconv.decode(buf, 'gbk'));
 
   if (!candidates.length) return buffer.toString('utf8');
   candidates.sort((a, b) => b.score - a.score);
-  return candidates[0].text;
+  const best = candidates[0];
+  const utf8 = candidates.find(c => c.encoding === 'utf8');
+  const selectedEncoding = (utf8 && utf8.score >= (best.score - 800)) ? 'utf8' : best.encoding;
+
+  if (selectedEncoding === 'gb18030') return iconv.decode(buffer, 'gb18030');
+  if (selectedEncoding === 'gbk') return iconv.decode(buffer, 'gbk');
+  return buffer.toString('utf8');
 }
 
-function readTxtBestEffort(filePath) {
+function normalizeNovelEncodingMode(input) {
+  const mode = String(input || '').trim().toLowerCase().replace(/[-_\s]/g, '');
+  if (mode === 'utf8') return 'utf8';
+  if (mode === 'gb18030' || mode === 'gb2312') return 'gb18030';
+  if (mode === 'gbk') return 'gbk';
+  return 'auto';
+}
+
+function decodeUtf8WithBomAware(buffer) {
+  if (buffer.length >= 3 && buffer[0] === 0xEF && buffer[1] === 0xBB && buffer[2] === 0xBF) {
+    return buffer.toString('utf8', 3);
+  }
+  return buffer.toString('utf8');
+}
+
+function readTxtBestEffort(filePath, encodingMode = 'auto') {
   const buffer = fs.readFileSync(filePath);
   if (!buffer.length) return '';
+  const mode = normalizeNovelEncodingMode(encodingMode);
+  if (mode === 'utf8') return decodeUtf8WithBomAware(buffer);
+  if (mode === 'gb18030') return iconv.decode(buffer, 'gb18030');
+  if (mode === 'gbk') return iconv.decode(buffer, 'gbk');
   return pickBestDecodedText(buffer);
 }
 
@@ -960,7 +1000,7 @@ function getNovelFilePath(novel) {
   return '';
 }
 
-function parseNovelChaptersByRecord(novel) {
+function parseNovelChaptersByRecord(novel, options = {}) {
   if (Array.isArray(novel?.chapters) && novel.chapters.length) {
     return novel.chapters;
   }
@@ -971,14 +1011,15 @@ function parseNovelChaptersByRecord(novel) {
   }
 
   const stat = fs.statSync(filePath);
-  const key = novel.id || filePath;
+  const encodingMode = normalizeNovelEncodingMode(options?.encodingMode);
+  const key = `${novel.id || filePath}::${encodingMode}`;
   const cache = novelChapterCache.get(key);
   if (cache && cache.mtimeMs === stat.mtimeMs) return cache.chapters;
 
   const ext = (novel.ext || path.extname(filePath) || '').toLowerCase();
   let chapters = [];
   if (ext === '.txt') {
-    const text = readTxtBestEffort(filePath);
+    const text = readTxtBestEffort(filePath, encodingMode);
     chapters = parseTxtChapters(text);
   } else if (ext === '.epub') {
     chapters = parseEpubChapters(filePath);
@@ -1761,10 +1802,12 @@ app.get('/api/novels/:id', (req, res, next) => {
   const n = loadNDB().novels.find(x => x.id === req.params.id);
   if (!n) return res.status(404).json({ error: '未找到' });
   const scriptMode = normalizeNovelScriptMode(req.query?.script);
-  const chapters = parseNovelChaptersByRecord(n);
+  const encodingMode = normalizeNovelEncodingMode(req.query?.encoding);
+  const chapters = parseNovelChaptersByRecord(n, { encodingMode });
   res.json({
     ...n,
     title: convertNovelTextByScript(n.title || '', scriptMode),
+    encodingMode,
     chapterCount: chapters.length,
     chapters: chapters.map((ch, idx) => ({
       idx,
@@ -1779,7 +1822,8 @@ app.get('/api/novels/:id/chapter/:idx', (req, res) => {
   if (!n) return res.status(404).json({ error: '未找到' });
   const idx = parseInt(req.params.idx);
   const scriptMode = normalizeNovelScriptMode(req.query?.script);
-  const chapters = parseNovelChaptersByRecord(n);
+  const encodingMode = normalizeNovelEncodingMode(req.query?.encoding);
+  const chapters = parseNovelChaptersByRecord(n, { encodingMode });
   const ch  = chapters[idx];
   if (!ch)  return res.status(404).json({ error: '章节不存在' });
   res.json({

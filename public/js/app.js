@@ -152,7 +152,8 @@ let novelSettings = {
   bg: '#fdf6e3',
   color: '#4a3728',
   fontFamily: 'Noto Serif SC, serif',
-  scriptMode: 'sc'
+  scriptMode: 'sc',
+  encodingMode: 'auto'
 };
 let novelPanelOpen = false;
 let novelUIVisible = true;
@@ -167,8 +168,27 @@ function normalizeNovelScriptMode(value) {
   return String(value || '').trim().toLowerCase() === 'tc' ? 'tc' : 'sc';
 }
 
+function normalizeNovelEncodingMode(value) {
+  const mode = String(value || '').trim().toLowerCase().replace(/[-_\s]/g, '');
+  if (mode === 'utf8') return 'utf8';
+  if (mode === 'gb18030' || mode === 'gb2312') return 'gb18030';
+  if (mode === 'gbk') return 'gbk';
+  return 'auto';
+}
+
 function getCurrentNovelScriptMode() {
   return normalizeNovelScriptMode(novelSettings?.scriptMode);
+}
+
+function getCurrentNovelEncodingMode() {
+  return normalizeNovelEncodingMode(novelSettings?.encodingMode);
+}
+
+function buildNovelReaderQuery() {
+  const params = new URLSearchParams();
+  params.set('script', getCurrentNovelScriptMode());
+  params.set('encoding', getCurrentNovelEncodingMode());
+  return params.toString();
 }
 
 // 阅读进度
@@ -4426,8 +4446,7 @@ async function openNovel(id) {
       else if (currentView === 'library') loadLibrary({ resetPage: false });
     }
     showToast('加载中…','');
-    const scriptMode = getCurrentNovelScriptMode();
-    const data  = await fetch(`/api/novels/${id}?script=${scriptMode}`).then(r=>r.json());
+    const data  = await fetch(`/api/novels/${id}?${buildNovelReaderQuery()}`).then(r=>r.json());
     const saved = getNovelProgress(id);
     const safeChapter = clampNovelChapterIndex(saved.chapter, data.chapterCount || 0);
     novel = {
@@ -4479,9 +4498,10 @@ function renderChapterList() {
 async function getNovelChapterData(idx) {
   if (idx < 0 || idx >= novel.chapters.length) return null;
   const scriptMode = getCurrentNovelScriptMode();
-  const cacheKey = `${scriptMode}:${idx}`;
+  const encodingMode = getCurrentNovelEncodingMode();
+  const cacheKey = `${scriptMode}:${encodingMode}:${idx}`;
   if (!novel.chapterCache[cacheKey]) {
-    novel.chapterCache[cacheKey] = await fetch(`/api/novels/${novel.id}/chapter/${idx}?script=${scriptMode}`).then(r=>r.json());
+    novel.chapterCache[cacheKey] = await fetch(`/api/novels/${novel.id}/chapter/${idx}?${buildNovelReaderQuery()}`).then(r=>r.json());
   }
   return novel.chapterCache[cacheKey] || { title: `第${idx+1}章`, content: '' };
 }
@@ -4674,8 +4694,18 @@ function loadNovelSettings() {
     Object.assign(novelSettings, s);
   } catch {}
   novelSettings.scriptMode = normalizeNovelScriptMode(novelSettings.scriptMode);
+  novelSettings.encodingMode = normalizeNovelEncodingMode(novelSettings.encodingMode);
 }
 function saveNovelSettingsLocal() { localStorage.setItem('novel_settings',JSON.stringify(novelSettings)); }
+
+function updateNovelEncodingQuickButton() {
+  const quickBtn = document.getElementById('novelEncodingQuickBtn');
+  if (!quickBtn) return;
+  const mode = getCurrentNovelEncodingMode();
+  const labelMap = { auto: '自动', utf8: 'UTF8', gb18030: '18030', gbk: 'GBK' };
+  quickBtn.textContent = labelMap[mode] || '自动';
+  quickBtn.title = `当前编码：${labelMap[mode] || '自动'}，点击切换`;
+}
 
 function updateNovelScriptQuickButton() {
   const quickBtn = document.getElementById('novelScriptQuickBtn');
@@ -4699,6 +4729,7 @@ function applyNovelSettings() {
   if (ff) ff.value = novelSettings.fontFamily;
   const script = document.getElementById('novelScriptSelect');
   if (script) script.value = getCurrentNovelScriptMode();
+  updateNovelEncodingQuickButton();
   updateNovelScriptQuickButton();
 }
 function changeFontSize(d) {
@@ -4741,7 +4772,7 @@ async function changeNovelScriptMode(value) {
 
   try {
     showToast('正在切换文字版本…', '');
-    const data = await fetch(`/api/novels/${novel.id}?script=${nextMode}`).then(r => r.json());
+    const data = await fetch(`/api/novels/${novel.id}?${buildNovelReaderQuery()}`).then(r => r.json());
     novel.title = data.title || novel.title;
     novel.chapters = data.chapters || novel.chapters || [];
     novel.chapterCount = Number(data.chapterCount || novel.chapters.length || 0);
@@ -4759,6 +4790,48 @@ async function changeNovelScriptMode(value) {
 function toggleNovelScriptModeQuick() {
   const nextMode = getCurrentNovelScriptMode() === 'tc' ? 'sc' : 'tc';
   changeNovelScriptMode(nextMode);
+}
+
+async function changeNovelEncodingMode(value) {
+  const nextMode = normalizeNovelEncodingMode(value);
+  if (nextMode === getCurrentNovelEncodingMode()) return;
+  novelSettings.encodingMode = nextMode;
+  applyNovelSettings();
+  saveNovelSettingsLocal();
+
+  if (!novel.id) {
+    showToast(`已切换编码：${document.getElementById('novelEncodingQuickBtn')?.textContent || nextMode}`, 'success');
+    return;
+  }
+
+  const currentIdx = clampNovelChapterIndex(novel.currentChapter, novel.chapterCount);
+  const body = document.getElementById('novelBody');
+  const maxScroll = body ? Math.max(body.scrollHeight - body.clientHeight, 0) : 0;
+  const currentScrollRatio = body && maxScroll ? (body.scrollTop / maxScroll) : 0;
+
+  try {
+    showToast('正在切换编码…', '');
+    const data = await fetch(`/api/novels/${novel.id}?${buildNovelReaderQuery()}`).then(r => r.json());
+    novel.title = data.title || novel.title;
+    novel.chapters = data.chapters || novel.chapters || [];
+    novel.chapterCount = Number(data.chapterCount || novel.chapters.length || 0);
+    novel.chapterCache = {};
+    novel.savedScrollRatio = currentScrollRatio;
+    document.getElementById('novelReaderTitle').textContent = novel.title;
+    renderChapterList();
+    await loadChapter(currentIdx);
+    showToast(`已切换编码：${document.getElementById('novelEncodingQuickBtn')?.textContent || nextMode}`, 'success');
+  } catch {
+    showToast('编码切换失败，请稍后重试', 'error');
+  }
+}
+
+function toggleNovelEncodingModeQuick() {
+  const order = ['auto', 'utf8', 'gb18030', 'gbk'];
+  const current = getCurrentNovelEncodingMode();
+  const idx = order.indexOf(current);
+  const next = order[(idx + 1) % order.length];
+  changeNovelEncodingMode(next);
 }
 
 function saveCurrentNovelProgress() {

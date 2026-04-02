@@ -1348,6 +1348,13 @@ input[type=number] { -moz-appearance: textfield; }
   font-size: .78rem;
   font-weight: 700;
 }
+.ctrl-btn.encoding-toggle-btn {
+  width: auto;
+  min-width: 54px;
+  padding: 0 .45rem;
+  font-size: .72rem;
+  font-weight: 700;
+}
 
 /* Page jump input */
 .page-jump { display: flex; align-items: center; gap: .28rem; }
