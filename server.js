@@ -7,6 +7,7 @@ const fs      = require('fs');
 const { v4: uuidv4 } = require('uuid');
 const AdmZip  = require('adm-zip');
 const yauzl   = require('yauzl');
+const iconv   = require('iconv-lite');
 const { registerMediaRoutes } = require('./routes/mediaRoutes');
 
 const app  = express();
@@ -799,41 +800,89 @@ function extractArchive(archivePath, destDir) {
 }
 
 // ── TXT → chapters ───────────────────────────────────────────────────────────
-// 识别常见章节标题：第X章、第X节、Chapter X、卷X、番外、序章、后记 等
-const CHAPTER_RE = /^[\s\u3000]*(第[零一二三四五六七八九十百千万\d]+[章节卷回集]|Chapter\s*\d+|番外|序章|序言|前言|后记|尾声|楔子|引子|终章)[^\n]{0,40}$/im;
+// 识别常见章节标题：第X章/话/节/卷、Chapter/CH、番外、序章、后记等
+const CHAPTER_RE = /^[\s\u3000]*(?:正文|第[\s\u3000]*[零一二三四五六七八九十百千万两〇○\d]+[\s\u3000]*[章节卷回集话篇幕部]|(?:chapter|chap(?:ter)?|ch)\s*[\divxlcdm]+|[上中下终]卷|番外(?:篇)?|序(?:章|言)|前言|后记|尾声|楔子|引子|终章)[^\n]{0,60}$/i;
 
 function parseTxtChapters(text) {
   const lines    = text.split(/\r?\n/);
   const chapters = [];
   let   buf      = [];
   let   title    = '正文';
+  let   hasBody  = false;
 
   for (const line of lines) {
-    if (CHAPTER_RE.test(line.trim()) && buf.join('').trim().length > 0) {
+    const trimmed = line.trim();
+    const isChapterTitle = CHAPTER_RE.test(trimmed);
+    if (isChapterTitle && hasBody) {
       chapters.push({ title, content: buf.join('\n').trim() });
       buf   = [];
-      title = line.trim();
-    } else if (CHAPTER_RE.test(line.trim())) {
-      title = line.trim();
+      hasBody = false;
+      title = trimmed;
+    } else if (isChapterTitle) {
+      title = trimmed;
     } else {
       buf.push(line);
+      if (!hasBody && trimmed) hasBody = true;
     }
   }
-  if (buf.join('').trim()) chapters.push({ title, content: buf.join('\n').trim() });
+  if (hasBody) chapters.push({ title, content: buf.join('\n').trim() });
   // 如果没识别出章节，整本作为一章
   if (!chapters.length) return [{ title: '全文', content: text.trim() }];
   return chapters;
 }
 
-function readTxtBestEffort(filePath) {
-  try {
-    const text = fs.readFileSync(filePath, 'utf8');
-    if ((text.match(/\ufffd/g)||[]).length > 20) throw new Error('need-fallback');
-    return text;
-  } catch {
-    const buf = fs.readFileSync(filePath);
-    return buf.toString('utf8', 0, buf.length);
+function scoreDecodedTextSample(text) {
+  const sample = String(text || '').slice(0, 200000);
+  const replacementCount = (sample.match(/\ufffd/g) || []).length;
+  const cjkCount = (sample.match(/[\u3400-\u9fff]/g) || []).length;
+  const mojibakeCount = (sample.match(/[ÃÂÐÕÆØÅæçéèêëìíîïòóôõöùúûüñ]/g) || []).length;
+  return (cjkCount * 2) - (replacementCount * 12) - (mojibakeCount * 4);
+}
+
+function pickBestDecodedText(buffer) {
+  const candidates = [];
+  const pushCandidate = (encoding, decoder) => {
+    try {
+      const text = decoder();
+      if (!text) return;
+      candidates.push({ encoding, text, score: scoreDecodedTextSample(text) });
+    } catch {
+      // ignore candidate decode failures
+    }
+  };
+
+  // UTF-8 BOM
+  if (buffer.length >= 3 && buffer[0] === 0xEF && buffer[1] === 0xBB && buffer[2] === 0xBF) {
+    return buffer.toString('utf8', 3);
   }
+  // UTF-16 LE BOM
+  if (buffer.length >= 2 && buffer[0] === 0xFF && buffer[1] === 0xFE) {
+    return iconv.decode(buffer.slice(2), 'utf16-le');
+  }
+  // UTF-16 BE BOM
+  if (buffer.length >= 2 && buffer[0] === 0xFE && buffer[1] === 0xFF) {
+    const data = Buffer.from(buffer.slice(2));
+    for (let i = 0; i < data.length - 1; i += 2) {
+      const t = data[i];
+      data[i] = data[i + 1];
+      data[i + 1] = t;
+    }
+    return iconv.decode(data, 'utf16-le');
+  }
+
+  pushCandidate('utf8', () => buffer.toString('utf8'));
+  pushCandidate('gb18030', () => iconv.decode(buffer, 'gb18030'));
+  pushCandidate('gbk', () => iconv.decode(buffer, 'gbk'));
+
+  if (!candidates.length) return buffer.toString('utf8');
+  candidates.sort((a, b) => b.score - a.score);
+  return candidates[0].text;
+}
+
+function readTxtBestEffort(filePath) {
+  const buffer = fs.readFileSync(filePath);
+  if (!buffer.length) return '';
+  return pickBestDecodedText(buffer);
 }
 
 // ── EPUB → chapters (pure Node, no extra deps) ───────────────────────────────
