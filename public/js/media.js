@@ -2791,6 +2791,7 @@
   function updateVideoDuplicateControls() {
     const ignoredBtn = document.getElementById('videoDuplicateIgnoredBtn');
     const restoreBtn = document.getElementById('videoDuplicateRestoreBtn');
+    const keepLatestBtn = document.getElementById('videoDuplicateKeepLatestBtn');
     const deleteBtn = document.getElementById('videoDuplicateDeleteBtn');
     const cancelBtn = document.getElementById('videoDuplicateCancelBtn');
     if (ignoredBtn) {
@@ -2802,6 +2803,10 @@
       restoreBtn.textContent = videoDuplicateSelectMode === 'restore'
         ? `↩ 恢复已选（${selectedCount}）`
         : '↩ 恢复忽略';
+    }
+    if (keepLatestBtn) {
+      keepLatestBtn.style.display = videoDuplicateIgnoredView ? 'none' : '';
+      keepLatestBtn.disabled = videoDuplicateLoading;
     }
     if (deleteBtn) {
       deleteBtn.textContent = videoDuplicateSelectMode === 'delete'
@@ -3065,6 +3070,51 @@
     videoDuplicateSelectMode = '';
     videoDuplicateSelected.clear();
     renderVideoDuplicatePanel();
+  }
+
+  async function handleVideoDuplicateKeepLatestAction() {
+    if (videoDuplicateIgnoredView) {
+      showImageBatchToast('请先返回查重结果页', 'error');
+      return;
+    }
+    const groups = buildVideoDuplicateGroups();
+    if (!groups.length) {
+      showImageBatchToast('当前没有可处理的重复分组', 'error');
+      return;
+    }
+
+    const deleteIds = [];
+    groups.forEach(group => {
+      const items = Array.isArray(group.items) ? group.items : [];
+      if (items.length <= 1) return;
+      const sorted = [...items].sort((a, b) => {
+        const ta = new Date(a?.uploadedAt || 0).getTime();
+        const tb = new Date(b?.uploadedAt || 0).getTime();
+        if (tb !== ta) return tb - ta;
+        return String(b?.id || '').localeCompare(String(a?.id || ''));
+      });
+      sorted.slice(1).forEach(item => {
+        const id = String(item?.id || '').trim();
+        if (id) deleteIds.push(id);
+      });
+    });
+
+    const uniqueDeleteIds = [...new Set(deleteIds)];
+    if (!uniqueDeleteIds.length) {
+      showImageBatchToast('没有需要删除的旧视频', '');
+      return;
+    }
+    if (!confirm(`将按分组保留最新一个，并删除其余 ${uniqueDeleteIds.length} 个视频，是否继续？`)) return;
+
+    const tasks = uniqueDeleteIds.map(id => fetch('/api/videos/' + encodeURIComponent(id), { method: 'DELETE' }));
+    const results = await Promise.allSettled(tasks);
+    const successCount = results.filter(r => r.status === 'fulfilled' && r.value?.ok).length;
+    const failedCount = uniqueDeleteIds.length - successCount;
+
+    await loadVideos(lastVideoLoadCtx || {});
+    await runVideoDuplicateCheck();
+    if (failedCount > 0) showImageBatchToast(`已删除 ${successCount} 个，${failedCount} 个失败`, 'error');
+    else showImageBatchToast(`处理完成，已删除 ${successCount} 个旧视频`, 'success');
   }
 
   function openVideoDuplicatePage() {
@@ -3710,6 +3760,7 @@
     handleImageDuplicateRestoreAction,
     handleVideoDuplicateRestoreAction,
     handleImageDuplicateKeepLatestAction,
+    handleVideoDuplicateKeepLatestAction,
     handleImageDuplicateDeleteAction,
     handleVideoDuplicateDeleteAction,
     exitImageDuplicateSelectMode,

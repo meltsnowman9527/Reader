@@ -80,7 +80,7 @@ let duplicateItems = [];
 let duplicatePage = 1;
 let duplicatePerPage = 20;
 let duplicateThreshold = 0.74;
-let duplicateMode = 'title';
+let duplicateMode = 'hash';
 let duplicateIgnoredCount = 0;
 let duplicateIgnoreMode = false;
 let duplicateIgnoreSelected = new Set();
@@ -851,6 +851,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   loadNovelSettings();
   loadDuplicateThreshold();
+  syncDuplicateModeUI();
   initCardActionToggle();
   initDesktopContextMenuDismiss();
   initMobileLongPressConflictGuard();
@@ -918,6 +919,17 @@ function loadDuplicateThreshold() {
   if (label) label.textContent = `${Math.round(duplicateThreshold * 100)}%`;
 }
 
+function syncDuplicateModeUI() {
+  const btn = document.getElementById('duplicateModeBtn');
+  const thresholdControl = document.getElementById('thresholdControl');
+  if (btn) {
+    btn.textContent = duplicateMode === 'hash' ? '🏷️ 切换为标题查重' : '🔐 切换为内容查重';
+  }
+  if (thresholdControl) {
+    thresholdControl.style.display = duplicateMode === 'hash' ? 'none' : '';
+  }
+}
+
 function saveDuplicateThreshold() {
   localStorage.setItem(DUPLICATE_THRESHOLD_KEY, String(duplicateThreshold));
 }
@@ -944,17 +956,10 @@ function applyDuplicateThreshold(value) {
 function switchDuplicateMode(mode) {
   if (currentType !== 'manga') return;
   const validMode = mode === 'hash' ? 'hash' : 'title';
-  if (duplicateMode === validMode) return;
+  const changed = duplicateMode !== validMode;
   duplicateMode = validMode;
-  const btn = document.getElementById('duplicateModeBtn');
-  const thresholdControl = document.getElementById('thresholdControl');
-  if (btn) {
-    btn.textContent = duplicateMode === 'hash' ? '🏷️ 切换为标题查重' : '🔐 切换为内容查重';
-  }
-  if (thresholdControl) {
-    thresholdControl.style.display = duplicateMode === 'hash' ? 'none' : '';
-  }
-  if (currentView === 'duplicates') runDuplicateCheckAction(false);
+  syncDuplicateModeUI();
+  if (changed && currentView === 'duplicates') runDuplicateCheckAction(false);
 }
 
 function isMobileLibraryViewport() {
@@ -2245,10 +2250,10 @@ async function runDuplicateCheckAction(keepPage = false) {
   }
   try {
     if (currentView !== 'duplicates') showView('duplicates');
-    showToast('正在分析标题相似度…', '');
+    showToast(duplicateMode === 'hash' ? '正在分析内容指纹…' : '正在分析标题相似度…', '');
     await loadDuplicateWorkspace({ keepPage });
     if (!duplicatePairs.length) {
-      showToast('未发现明显重复标题', 'success');
+      showToast(duplicateMode === 'hash' ? '未发现内容重复漫画' : '未发现明显重复标题', 'success');
       return;
     }
     showToast('已按重复度从高到低更新重复漫画列表', 'success');
@@ -2291,6 +2296,7 @@ function syncNovelDuplicateSelected() {
 function updateNovelDuplicateControls() {
   const ignoredBtn = document.getElementById('novelDuplicateIgnoredBtn');
   const restoreBtn = document.getElementById('novelDuplicateRestoreBtn');
+  const keepLatestBtn = document.getElementById('novelDuplicateKeepLatestBtn');
   const deleteBtn = document.getElementById('novelDuplicateDeleteBtn');
   const cancelBtn = document.getElementById('novelDuplicateCancelBtn');
   if (ignoredBtn) {
@@ -2302,6 +2308,10 @@ function updateNovelDuplicateControls() {
     restoreBtn.textContent = novelDuplicateSelectMode === 'restore'
       ? `↩ 恢复已选（${selectedCount}）`
       : '↩ 恢复忽略';
+  }
+  if (keepLatestBtn) {
+    keepLatestBtn.style.display = novelDuplicateIgnoredView ? 'none' : '';
+    keepLatestBtn.disabled = novelDuplicateLoading;
   }
   if (deleteBtn) {
     deleteBtn.textContent = novelDuplicateSelectMode === 'delete'
@@ -2516,6 +2526,57 @@ async function handleNovelDuplicateRestoreAction() {
   novelDuplicateSelectMode = '';
   novelDuplicateSelected.clear();
   renderNovelDuplicatePanel();
+}
+
+async function handleNovelDuplicateKeepLatestAction() {
+  if (novelDuplicateIgnoredView) {
+    showToast('请先返回查重结果页', 'error');
+    return;
+  }
+  const groups = buildNovelDuplicateGroups();
+  if (!groups.length) {
+    showToast('当前没有可处理的重复分组', 'error');
+    return;
+  }
+
+  const deleteIds = [];
+  groups.forEach(group => {
+    const items = Array.isArray(group.items) ? group.items : [];
+    if (items.length <= 1) return;
+    const sorted = [...items].sort((a, b) => {
+      const ta = new Date(a?.uploadedAt || 0).getTime();
+      const tb = new Date(b?.uploadedAt || 0).getTime();
+      if (tb !== ta) return tb - ta;
+      return String(b?.id || '').localeCompare(String(a?.id || ''));
+    });
+    sorted.slice(1).forEach(item => {
+      const id = String(item?.id || '').trim();
+      if (id) deleteIds.push(id);
+    });
+  });
+
+  const uniqueDeleteIds = [...new Set(deleteIds)];
+  if (!uniqueDeleteIds.length) {
+    showToast('没有需要删除的旧小说', '');
+    return;
+  }
+  if (!confirm(`将按分组保留最新一本，并删除其余 ${uniqueDeleteIds.length} 本小说，是否继续？`)) return;
+
+  try {
+    const resp = await fetch('/api/novels/duplicates/delete', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ids: uniqueDeleteIds })
+    });
+    if (!resp.ok) throw new Error('批量删除失败');
+    const result = await resp.json().catch(() => ({ affected: 0 }));
+    await runNovelDuplicateCheck();
+    await loadLibrary({ resetPage: false });
+    await loadMeta();
+    showToast(`处理完成，已删除 ${Number(result.affected || 0)} 本旧小说`, 'success');
+  } catch {
+    showToast('每组保留最新执行失败', 'error');
+  }
 }
 
 async function handleNovelDuplicateDeleteAction() {
